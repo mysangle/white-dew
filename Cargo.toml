@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = [
+    "apps/whitedew",
+    "crates/whitedew_core"
+]
+
+[workspace.package]
+edition = "2024"
+
+[workspace.dependencies]
+whitedew_core = { path = "crates/whitedew_core", version = "0.1.0" }

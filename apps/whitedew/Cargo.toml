@@ -1,0 +1,10 @@
+[package]
+name = "whitedew"
+version = "0.1.0"
+edition.workspace = true
+
+# 자동으로 해당 파일을 빌드 스크립트(build script)로 실행
+build = "build/main.rs"
+
+[dependencies]
+whitedew_core = { workspace = true }
