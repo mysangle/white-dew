@@ -7,4 +7,10 @@ edition.workspace = true
 build = "build/main.rs"
 
 [dependencies]
+stdext = { workspace = true }
 whitedew_core = { workspace = true }
+
+[build-dependencies]
+# build에서 사용
+stdext.workspace = true
+toml-span = { version = "0.6", default-features = false }

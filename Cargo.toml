@@ -2,11 +2,14 @@
 resolver = "2"
 members = [
     "apps/whitedew",
+    "crates/stdext",
     "crates/whitedew_core"
 ]
 
 [workspace.package]
 edition = "2024"
+rust-version = "1.88"
 
 [workspace.dependencies]
+stdext = { path = "crates/stdext", version = "0.1.0" }
 whitedew_core = { path = "crates/whitedew_core", version = "0.1.0" }

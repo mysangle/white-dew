@@ -9,9 +9,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37c93d8daa9d8a012fd8ab92f088405fb202ea0b6ab73ee2482ae66af4f42091"
 
 [[package]]
+name = "smallvec"
+version = "1.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+
+[[package]]
+name = "stdext"
+version = "0.1.0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "toml-span"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c6532e5b62b652073bff0e2050ef57e4697a853be118d6c57c32b59fffdeaab"
+dependencies = [
+ "smallvec",
+]
+
+[[package]]
 name = "whitedew"
 version = "0.1.0"
 dependencies = [
+ "stdext",
+ "toml-span",
  "whitedew_core",
 ]
 
@@ -20,4 +44,5 @@ name = "whitedew_core"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "stdext",
 ]

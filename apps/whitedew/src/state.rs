@@ -1,5 +1,5 @@
 
-use crate::localization::*;
+use crate::documents::DocumentManager;
 use whitedew_core::{apperr, icu, sys};
 
 #[repr(transparent)]
@@ -19,5 +19,27 @@ impl std::fmt::Display for FormatApperr {
             apperr::Error::Icu(code) => icu::apperr_format(f, code),
             apperr::Error::Sys(code) => sys::apperr_format(f, code),
         }
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum StateFilePicker {
+    None,
+    Open,
+    SaveAs,
+    SaveAsShown, // Transitioned from SaveAs
+}
+
+pub struct State {
+    pub documents: DocumentManager,
+    pub wants_file_picker: StateFilePicker,
+}
+
+impl State {
+    pub fn new() -> apperr::Result<Self> {
+        Ok(Self {
+            documents: Default::default(),
+            wants_file_picker: StateFilePicker::None,
+        })
     }
 }
