@@ -24,3 +24,6 @@ impl AsciiStringHelpers for str {
         p.len() <= s.len() && s[..p.len()].eq_ignore_ascii_case(p)
     }
 }
+
+/// A viewport coordinate type used throughout the application.
+pub type CoordType = isize;

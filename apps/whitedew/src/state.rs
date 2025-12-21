@@ -1,5 +1,6 @@
 
 use crate::documents::DocumentManager;
+use std::{borrow::Cow, mem, path::PathBuf};
 use whitedew_core::{apperr, icu, sys};
 
 #[repr(transparent)]
@@ -30,9 +31,30 @@ pub enum StateFilePicker {
     SaveAsShown, // Transitioned from SaveAs
 }
 
+pub struct DisplayablePathBuf {
+    value: PathBuf,
+    str: Cow<'static, str>,
+}
+
+impl DisplayablePathBuf {
+    pub fn from_path(value: PathBuf) -> Self {
+        let str = value.to_string_lossy();
+        let str = unsafe { mem::transmute::<Cow<'_, str>, Cow<'_, str>>(str) };
+        Self { value, str }
+    }
+}
+
+impl Default for DisplayablePathBuf {
+    fn default() -> Self {
+        // 정적인 빈 문자열을 가리키는 Cow 생성
+        Self { value: Default::default(), str: Cow::Borrowed("") }
+    }
+}
+
 pub struct State {
     pub documents: DocumentManager,
     pub wants_file_picker: StateFilePicker,
+    pub file_picker_pending_dir: DisplayablePathBuf,
 }
 
 impl State {
@@ -40,6 +62,7 @@ impl State {
         Ok(Self {
             documents: Default::default(),
             wants_file_picker: StateFilePicker::None,
+            file_picker_pending_dir: Default::default(),
         })
     }
 }
