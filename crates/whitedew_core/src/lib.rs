@@ -2,8 +2,10 @@
 #![feature(allocator_api)]
 
 pub mod apperr;
+pub mod base64;
 pub mod buffer;
 pub mod cell;
+pub mod clipboard;
 pub mod framebuffer;
 pub mod helpers;
 pub mod icu;

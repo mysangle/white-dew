@@ -1,7 +1,7 @@
 
 use crate::documents::DocumentManager;
 use std::{borrow::Cow, mem, path::PathBuf};
-use whitedew_core::{apperr, icu, sys};
+use whitedew_core::{apperr, icu, oklab::StraightRgba, sys};
 
 #[repr(transparent)]
 pub struct FormatApperr(apperr::Error);
@@ -51,10 +51,22 @@ impl Default for DisplayablePathBuf {
     }
 }
 
+#[derive(Default)]
+pub struct OscTitleFileStatus {
+    pub filename: String,
+    pub dirty: bool,
+}
+
 pub struct State {
     pub documents: DocumentManager,
     pub wants_file_picker: StateFilePicker,
     pub file_picker_pending_dir: DisplayablePathBuf,
+    pub menubar_color_bg: StraightRgba,
+    pub menubar_color_fg: StraightRgba,
+    pub exit: bool,
+    pub osc_clipboard_sync: bool,
+    pub osc_title_file_status: OscTitleFileStatus,
+    pub documents: DocumentManager,
 }
 
 impl State {
@@ -63,6 +75,12 @@ impl State {
             documents: Default::default(),
             wants_file_picker: StateFilePicker::None,
             file_picker_pending_dir: Default::default(),
+            menubar_color_bg: StraightRgba::zero(),
+            menubar_color_fg: StraightRgba::zero(),
+            exit: false,
+            osc_clipboard_sync: false,
+            osc_title_file_status: Default::default(),
+            documents: Default::default(),
         })
     }
 }

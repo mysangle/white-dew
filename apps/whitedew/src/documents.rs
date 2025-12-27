@@ -11,11 +11,17 @@ pub struct DocumentManager {
 }
 
 impl DocumentManager {
+    #[inline]
+    pub fn active(&self) -> Option<&Document> {
+        self.list.front()
+    }
+    
     pub fn add_file_path(&mut self, path: &Path) -> apperr::Result<&mut Document> {
         let buffer = Self::create_buffer()?;
 
         let mut doc = Document {
             buffer,
+            filename: Default::default(),
         };
 
         self.list.push_front(doc);
@@ -26,6 +32,7 @@ impl DocumentManager {
         let buffer = Self::create_buffer()?;
         let mut doc = Document {
             buffer,
+            filename: Default::default(),
         };
 
         self.list.push_front(doc);
@@ -45,4 +52,5 @@ impl DocumentManager {
 
 pub struct Document {
     pub buffer: RcTextBuffer,
+    pub filename: String,
 }

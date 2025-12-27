@@ -57,6 +57,12 @@ pub fn init() -> Deinit {
     Deinit
 }
 
+pub fn inject_window_size_into_stdin() {
+    unsafe {
+        STATE.inject_resize = true;
+    }
+}
+
 extern "C" fn sigwinch_handler(_: libc::c_int) {
     unsafe {
         STATE.inject_resize = true;

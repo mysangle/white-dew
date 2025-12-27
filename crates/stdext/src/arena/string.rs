@@ -90,6 +90,11 @@ impl<'a> ArenaString<'a> {
         self.vec.reserve(additional)
     }
 
+    /// Just like [`ArenaString::reserve`], but it doesn't overallocate.
+    pub fn reserve_exact(&mut self, additional: usize) {
+        self.vec.reserve_exact(additional)
+    }
+
     /// Append some text.
     pub fn push_str(&mut self, string: &str) {
         self.vec.extend_from_slice(string.as_bytes())

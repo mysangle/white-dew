@@ -5,15 +5,21 @@ mod localization;
 mod state;
 
 use crate::state::{DisplayablePathBuf, FormatApperr, State, StateFilePicker};
+use localization::{loc, LocId};
 use std::{
+    borrow::Cow,
     env,
     path::{Path, PathBuf},
     process,
     time::Duration,
 };
-use stdext::arena::{self, Arena, scratch_arena};
+use stdext::{
+    arena::{self, Arena, ArenaString, scratch_arena},
+    arena_format,
+};
 use whitedew_core::{
     apperr,
+    base64,
     framebuffer::{self, IndexedColor},
     helpers::{CoordType, MEBI},
     input,
@@ -21,7 +27,7 @@ use whitedew_core::{
     path,
     sys,
     unicode,
-    tui::Tui,
+    tui::{ModifierTranslations, Tui},
     vt::{self, Token},
 };
 
@@ -67,6 +73,147 @@ fn run() -> apperr::Result<()> {
     let mut tui = Tui::new()?;
 
     let _restore = setup_terminal(&mut tui, &mut state, &mut vt_parser);
+
+    // TUI를 위한 칼라 설정
+
+    // Background 칼라와 BrightBlue 칼라를 블렌드한다.
+    state.menubar_color_bg = tui.indexed(IndexedColor::Background).oklab_blend(tui.indexed_alpha(
+        IndexedColor::BrightBlue,
+        1,
+        2,
+    ));
+    state.menubar_color_fg = tui.contrasted(state.menubar_color_bg);
+    let floater_bg = tui
+        .indexed_alpha(IndexedColor::Background, 2, 3)
+        .oklab_blend(tui.indexed_alpha(IndexedColor::Foreground, 1, 3));
+    let floater_fg = tui.contrasted(floater_bg);
+    tui.setup_modifier_translations(ModifierTranslations {
+        ctrl: loc(LocId::Ctrl),
+        alt: loc(LocId::Alt),
+        shift: loc(LocId::Shift),
+    });
+    tui.set_floater_default_bg(floater_bg);
+    tui.set_floater_default_fg(floater_fg);
+    tui.set_modal_default_bg(floater_bg);
+    tui.set_modal_default_fg(floater_fg);
+
+    sys::inject_window_size_into_stdin();
+
+    let mut last_latency_width = 0;
+
+    loop {
+        let time_beg;
+        let mut passes;
+
+        // Process a batch of input.
+        {
+            let scratch = scratch_arena(None);
+            let read_timeout = vt_parser.read_timeout().min(tui.read_timeout());
+            let Some(input) = sys::read_stdin(&scratch, read_timeout) else {
+                break;
+            };
+
+            {
+                time_beg = std::time::Instant::now();
+                passes = 0usize;
+            }
+
+            let vt_iter = vt_parser.parse(&input);
+            let mut input_iter = input_parser.parse(vt_iter);
+
+            while {
+                let input = input_iter.next();
+                let more = input.is_some();
+                let mut ctx = tui.create_context(input);
+
+                draw(&mut ctx, &mut state);
+
+                {
+                    passes += 1;
+                }
+
+                more
+            } {}
+        }
+
+        // Continue rendering until the layout has settled.
+        // This can take >1 frame, if the input focus is tossed between different controls.
+        while tui.needs_settling() {
+            let mut ctx = tui.create_context(None);
+
+            draw(&mut ctx, &mut state);
+
+            {
+                passes += 1;
+            }
+        }
+
+        if state.exit {
+            break;
+        }
+
+        // Render the UI and write it to the terminal.
+        {
+            let scratch = scratch_arena(None);
+            let mut output = tui.render(&scratch);
+
+            write_terminal_title(&mut output, &mut state);
+
+            if state.osc_clipboard_sync {
+                write_osc_clipboard(&mut tui, &mut state, &mut output);
+            }
+
+            {
+                // Print the number of passes and latency in the top right corner.
+                let time_end = std::time::Instant::now();
+                let status = time_end - time_beg;
+
+                let scratch_alt = scratch_arena(Some(&scratch));
+                let status = arena_format!(
+                    &scratch_alt,
+                    "{}P {}B {:.3}μs",
+                    passes,
+                    output.len(),
+                    status.as_nanos() as f64 / 1000.0
+                );
+
+                // "μs" is 3 bytes and 2 columns.
+                let cols = status.len() as whitedew_core::helpers::CoordType - 3 + 2;
+
+                // Since the status may shrink and grow, we may have to overwrite the previous one with whitespace.
+                let padding = (last_latency_width - cols).max(0);
+
+                // If the `output` is already very large,
+                // Rust may double the size during the write below.
+                // Let's avoid that by reserving the needed size in advance.
+                output.reserve_exact(128);
+
+                // 현재 화면 상태를 보존한 뒤 특정 위치에 빨간 배경·흰 글씨로 텍스트를 찍고, 다시 원래 상태로 복구
+                // {1}에 ""를 사용하는 이유: zero-allocation으로 폭 지정
+                //
+                // To avoid moving the cursor, push and pop it onto the VT cursor stack.
+                //
+                // \x1b7         => 현재 커서 위치와 화면 속성 저장
+                // \x1b[0;41;97m => 0은 모든 속성 초기화, 41은 배경색 빨강, 97은 전경색: 밝은 흰색 (bright white)
+                // \x1b[1;{0}H   => 커서를 지정한 위치로 이동(첫 번째 줄, {0}번째 열로 이동)
+                // {1:2$}{3}     => 인자 1번, 최소 폭 2, 인자 3번
+                // \x1b8         => 상태 복원
+                _ = write!(
+                    output,
+                    "\x1b7\x1b[0;41;97m\x1b[1;{0}H{1:2$}{3}\x1b8",
+                    tui.size().width - cols - padding + 1,
+                    "",
+                    padding as usize,
+                    status
+                );
+
+                last_latency_width = cols;
+            }
+
+            sys::write_stdout(&output);
+        }
+        break;
+    }
     
     Ok(())
 }
@@ -150,6 +297,10 @@ fn print_version() {
     sys::write_stdout(concat!("edit version ", env!("CARGO_PKG_VERSION"), "\n"));
 }
 
+fn draw(ctx: &mut Context, state: &mut State) {
+
+}
+
 struct RestoreModes;
 
 impl Drop for RestoreModes {
@@ -167,6 +318,9 @@ impl Drop for RestoreModes {
 }
 
 /// 터미널을 TUI 앱에 적합한 모드로 전환
+///   Alternative Screen Buffer
+///   터미널 색상
+///   ambiguous width의 크기
 fn setup_terminal(tui: &mut Tui, state: &mut State, vt_parser: &mut vt::Parser) -> RestoreModes {
     // 터미널에 제어 시퀀스 전송
     sys::write_stdout(concat!(
@@ -317,4 +471,78 @@ fn setup_terminal(tui: &mut Tui, state: &mut State, vt_parser: &mut vt::Parser) 
     }
 
     RestoreModes
+}
+
+/// \x1b]0; => 이제부터 오는 문자열을 창 제목으로 설정하라는 의미
+/// 제목 형식: ● dirty_file.txt - whitedew 또는 clean_file.txt - whitedew
+/// \x1b\\  => OSC 시퀀스를 종료
+fn write_terminal_title(output: &mut ArenaString, state: &mut State) {
+    let (filename, dirty) = state
+        .documents
+        .active()
+        .map_or(("", false), |d| (&d.filename, d.buffer.borrow().is_dirty()));
+
+    if filename == state.osc_title_file_status.filename
+        && dirty == state.osc_title_file_status.dirty
+    {
+        return;
+    }
+
+    output.push_str("\x1b]0;");
+    if !filename.is_empty() {
+        if dirty {
+            output.push_str("● ");
+        }
+        output.push_str(&sanitize_control_chars(filename));
+        output.push_str(" - ");
+    }
+    output.push_str("whitedew\x1b\\");
+
+    state.osc_title_file_status.filename = filename.to_string();
+    state.osc_title_file_status.dirty = dirty;
+}
+
+/// 애플리케이션의 클립보드 내용을 호스트 터미널의 클립보드로 전송하는 역할
+/// \x1b]   => OSC(Operating System Command) 시퀀스의 시작을 알리는 이스케이프 코드
+/// 52      => 클립보드 작업(주로 호스트 클립보드 설정)을 나타내는 OSC 명령어 코드
+/// c       => "클립보드" 또는 "주요 선택(primary selection)"을 의미
+/// 두 번째 ; => Base64 인코딩된 데이터가 뒤따를 것임을 표시
+/// \x1b\\  => OSC 시퀀스를 종료
+#[cold]
+fn write_osc_clipboard(tui: &mut Tui, state: &mut State, output: &mut ArenaString) {
+    let clipboard = tui.clipboard_mut();
+    let data = clipboard.read();
+
+    if !data.is_empty() {
+        // Rust doubles the size of a string when it needs to grow it.
+        // If `data` is *really* large, this may then double
+        // the size of the `output` from e.g. 100MB to 200MB. Not good.
+        // We can avoid that by reserving the needed size in advance.
+        output.reserve_exact(base64::encode_len(data.len()) + 16);
+        output.push_str("\x1b]52;c;");
+        base64::encode(output, data);
+        output.push_str("\x1b\\");
+    }
+
+    state.osc_clipboard_sync = false;
+}
+
+/// Strips all C0 control characters from the string and replaces them with "_".
+///
+/// Jury is still out on whether this should also strip C1 control characters.
+/// That requires parsing UTF8 codepoints, which is annoying.
+fn sanitize_control_chars(text: &str) -> Cow<'_, str> {
+    if let Some(off) = text.bytes().position(|b| (..0x20).contains(&b)) {
+        let mut sanitized = text.to_string();
+        // SAFETY: We only search for ASCII and replace it with ASCII.
+        let vec = unsafe { sanitized.as_bytes_mut() };
+
+        for i in &mut vec[off..] {
+            *i = if (..0x20).contains(i) { b'_' } else { *i }
+        }
+
+        Cow::Owned(sanitized)
+    } else {
+        Cow::Borrowed(text)
+    }
 }

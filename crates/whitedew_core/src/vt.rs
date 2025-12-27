@@ -3,6 +3,7 @@ use crate::{
     simd::memchr2,
     unicode::Utf8Chars,
 };
+use std::time;
 
 /// The parser produces these tokens.
 pub enum Token<'parser, 'input> {
@@ -15,10 +16,14 @@ pub enum Token<'parser, 'input> {
     /// We encountered `ESC O x` and this contains `x`.
     SS3(char),
     /// A CSI sequence started with `ESC [`.
+    /// CSI: Control Sequence Introduer
+    ///      커서 이동, 색상 변경, 화면 지우기 같은 동작을 제어할 때 사용
     ///
     /// They are the most common escape sequences. See [`Csi`].
     Csi(&'parser Csi),
     /// An OSC sequence started with `ESC ]`.
+    /// OSC: Operating System Command
+    ///      터미널(혹은 OS/터미널 에뮬레이터) 수준의 상태를 바꾸는 명령
     ///
     /// The sequence may be split up into multiple tokens if the input
     /// is given in chunks. This is indicated by the `partial` field.
@@ -73,6 +78,24 @@ impl Parser {
         Self {
             state: State::Ground,
             csi: Csi { params: [0; 32], param_count: 0, private_byte: '\0', final_byte: '\0' },
+        }
+    }
+
+    /// Suggests a timeout for the next call to `read()`.
+    ///
+    /// We need this because of the ambiguity of whether a trailing
+    /// escape character in an input is starting another escape sequence or
+    /// is just the result of the user literally pressing the Escape key.
+    pub fn read_timeout(&mut self) -> std::time::Duration {
+        match self.state {
+            // 다음 문자가 이스케이프 시퀀스의 일부인지 판단해야 하므로 짧은 타임아웃을 사용
+            // 100ms is a upper ceiling for a responsive feel.
+            // Realistically though, this could be much lower.
+            //
+            // However, there seems to be issues with OpenSSH on Windows.
+            // See: https://github.com/PowerShell/Win32-OpenSSH/issues/2275
+            State::Esc => time::Duration::from_millis(100),
+            _ => time::Duration::MAX,
         }
     }
 
